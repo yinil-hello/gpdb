@@ -65,16 +65,13 @@ private:
 	// constraint property
 	static CExpression *PexprScalarPredicates(
 		CMemoryPool *mp, CPropConstraint *ppc,
-		CPropConstraint *constraintsForOuterRefs, CColRefSet *pcrsNotNull,
+		CPropConstraint *constraintsForOuterRefs,
+		CPropConstraint *ppcFromFilterSubquery, CColRefSet *pcrsNotNull,
 		CColRefSet *pcrs, CColRefSet *pcrsProcessed);
 
 	// eliminate self comparisons
 	static CExpression *PexprEliminateSelfComparison(CMemoryPool *mp,
 													 CExpression *pexpr);
-
-	// remove CTE Anchor nodes
-	static CExpression *PexprRemoveCTEAnchors(CMemoryPool *mp,
-											  CExpression *pexpr);
 
 	// trim superfluos equality
 	static CExpression *PexprPruneSuperfluousEquality(CMemoryPool *mp,
@@ -209,16 +206,21 @@ private:
 	static CExpression *PexprTransposeSelectAndProject(CMemoryPool *mp,
 													   CExpression *pexpr);
 
-	// private ctor
-	CExpressionPreprocessor();
+	static CExpression *ConvertSplitUpdateToInPlaceUpdate(CMemoryPool *mp,
+														  CExpression *expr);
 
-	// private dtor
-	virtual ~CExpressionPreprocessor();
-
-	// private copy ctor
-	CExpressionPreprocessor(const CExpressionPreprocessor &);
+	static CExpression *CollapseSelectAndReplaceColref(CMemoryPool *mp,
+													   CExpression *expr,
+													   CColRef *pcolref,
+													   CExpression *pprojExpr);
 
 public:
+	CExpressionPreprocessor() = delete;
+
+	virtual ~CExpressionPreprocessor() = delete;
+
+	CExpressionPreprocessor(const CExpressionPreprocessor &) = delete;
+
 	// main driver
 	static CExpression *PexprPreprocess(
 		CMemoryPool *mp, CExpression *pexpr,

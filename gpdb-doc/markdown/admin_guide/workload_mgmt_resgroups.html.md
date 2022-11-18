@@ -2,11 +2,13 @@
 title: Using Resource Groups 
 ---
 
-You use resource groups to set and enforce CPU, memory, and concurrent transaction limits in Greenplum Database. After you define a resource group, you can then assign the group to one or more Greenplum Database roles, or to an external component such as PL/Container, in order to control the resources used by those roles or components.
+You use resource groups to set and enforce CPU, memory, and concurrent transaction limits in Greenplum Database. After you define a resource group, you can then assign the group to one or more Greenplum Database roles, or to an external component such as PL/Container, in order to control the resources used by those roles or components. 
 
 When you assign a resource group to a role \(a role-based resource group\), the resource limits that you define for the group apply to all of the roles to which you assign the group. For example, the memory limit for a resource group identifies the maximum memory usage for all running transactions submitted by Greenplum Database users in all roles to which you assign the group.
 
 Similarly, when you assign a resource group to an external component, the group limits apply to all running instances of the component. For example, if you create a resource group for a PL/Container external component, the memory limit that you define for the group specifies the maximum memory usage for all running instances of each PL/Container runtime to which you assign the group.
+
+When using resource groups to control resources like CPU cores, review the Hyperthreading note in [Hardware and Network](../install_guide/platform-requirements.html#topic_tnl_3mx_zgb).
 
 This topic includes the following subtopics:
 
@@ -134,7 +136,7 @@ When you assign CPU cores to `CPUSET` groups, consider the following:
 
 Resource groups that you configure with `CPUSET` have a higher priority on CPU resources. The maximum CPU resource usage percentage for all resource groups configured with `CPUSET` on a segment host is the number of CPU cores reserved divided by the number of all CPU cores, multiplied by 100.
 
-When you configure `CPUSET` for a resource group, Greenplum Database disables `CPU_RATE_LIMIT` for the group and sets the value to -1.
+When you configure `CPUSET` for a resource group, Greenplum Database deactivates `CPU_RATE_LIMIT` for the group and sets the value to -1.
 
 **Note:** You must configure `CPUSET` for a resource group *after* you have enabled resource group-based resource management for your Greenplum Database cluster.
 
@@ -151,7 +153,7 @@ The maximum CPU resource usage for all resource groups configured with a `CPU_RA
 -   The number of non-reserved CPU cores divided by the number of all CPU cores, multiplied by 100, and
 -   The `gp_resource_group_cpu_limit` value.
 
-When you configure `CPU_RATE_LIMIT` for a resource group, Greenplum Database disables `CPUSET` for the group and sets the value to -1.
+When you configure `CPU_RATE_LIMIT` for a resource group, Greenplum Database deactivates `CPUSET` for the group and sets the value to -1.
 
 There are two different ways of assigning CPU resources by percentage, determined by the value of the configuration parameter `gp_resource_group_cpu_ceiling_enforcement`:
 
@@ -188,7 +190,7 @@ The minimum `MEMORY_SHARED_QUOTA` that you can specify is 0, the maximum is 100.
 
 As mentioned previously, `CONCURRENCY` identifies the maximum number of concurrently running transactions permitted in a resource group for roles. If fixed memory is reserved by a resource group \(non-zero `MEMORY_LIMIT`\), it is divided into `CONCURRENCY` number of transaction slots. Each slot is allocated a fixed, equal amount of the resource group memory. Greenplum Database guarantees this fixed memory to each transaction.
 
-![](graphics/resgroupmem.png "Resource Group Memory Allotments")
+![Resource Group Memory Allotments](graphics/resgroupmem.png "Resource Group Memory Allotments")
 
 When a query's memory usage exceeds the fixed per-transaction memory usage amount, Greenplum Database allocates available resource group shared memory to the query. The maximum amount of resource group memory available to a specific transaction slot is the sum of the transaction's fixed memory and the full resource group shared memory allotment.
 

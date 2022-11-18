@@ -890,6 +890,17 @@ _readReplicaIdentityStmt(void)
 	READ_DONE();
 }
 
+static AlterDatabaseStmt *
+_readAlterDatabaseStmt(void)
+{
+	READ_LOCALS(AlterDatabaseStmt);
+
+	READ_STRING_FIELD(dbname);
+	READ_NODE_FIELD(options);
+
+	READ_DONE();
+}
+
 static AlterTableStmt *
 _readAlterTableStmt(void)
 {
@@ -2580,6 +2591,7 @@ _readModifyTable(void)
 	READ_UINT_FIELD(exclRelRTI);
 	READ_NODE_FIELD(exclRelTlist);
 	READ_NODE_FIELD(isSplitUpdates);
+	READ_BOOL_FIELD(forceTupleRouting);
 
 	READ_DONE();
 }
@@ -3185,9 +3197,6 @@ _readSort(void)
 	READ_OID_ARRAY(sortOperators, local_node->numCols);
 	READ_OID_ARRAY(collations, local_node->numCols);
 	READ_BOOL_ARRAY(nullsFirst, local_node->numCols);
-
-    /* CDB */
-	READ_BOOL_FIELD(noduplicates);
 
 	READ_DONE();
 }
@@ -4724,6 +4733,8 @@ parseNodeString(void)
 		return_value = _readNewConstraint();
 	else if (MATCHX("NEWCOLUMNVALUE"))
 		return_value = _readNewColumnValue();
+	else if (MATCHX("ALTERDATABASESTMT"))
+		return_value = _readAlterDatabaseStmt();
 	else if (MATCHX("ALTERTABLESTMT"))
 		return_value = _readAlterTableStmt();
 	else if (MATCHX("ALTERTYPESTMT"))

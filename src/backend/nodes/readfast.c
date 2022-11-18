@@ -737,6 +737,7 @@ _readCreateStmt_common(CreateStmt *local_node)
 	READ_STRING_FIELD(tablespacename);
 	READ_STRING_FIELD(accessMethod);
 	READ_BOOL_FIELD(if_not_exists);
+	READ_BOOL_FIELD(gp_style_alter_part);
 
 	READ_NODE_FIELD(distributedBy);
 	READ_NODE_FIELD(partitionBy);
@@ -1070,7 +1071,6 @@ _readSplitUpdate(void)
 	READ_LOCALS(SplitUpdate);
 
 	READ_INT_FIELD(actionColIdx);
-	READ_INT_FIELD(tupleoidColIdx);
 	READ_NODE_FIELD(insertColIdx);
 	READ_NODE_FIELD(deleteColIdx);
 
@@ -2212,6 +2212,9 @@ readNodeBinary(void)
 			case T_ReplicaIdentityStmt:
 				return_value = _readReplicaIdentityStmt();
 				break;
+			case T_AlterDatabaseStmt:
+				return_value = _readAlterDatabaseStmt();
+			break;
 			case T_AlterTableStmt:
 				return_value = _readAlterTableStmt();
 				break;

@@ -185,11 +185,6 @@ main(int argc, char **argv)
 
 	if (is_greenplum_dispatcher_mode())
 	{
-		/*
-		 * GPDB_12_MERGE_FIXME: this is where we used to create new databases
-		 * in case we were the dispatcher, now upstream does prepare_new_globals.
-		 * Verify that this replacement is what we want.
-		 */
 		prepare_new_globals();
 
 		create_new_objects();
@@ -608,7 +603,8 @@ create_new_objects(void)
 	/* update new_cluster info now that we have objects in the databases */
 	get_db_and_rel_infos(&new_cluster);
 
-	after_create_new_objects_greenplum();
+	/* TODO: Bitmap indexes are not supported, so mark them as invalid. */
+	new_gpdb_invalidate_bitmap_indexes();
 }
 
 

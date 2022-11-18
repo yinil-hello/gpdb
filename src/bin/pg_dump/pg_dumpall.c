@@ -576,7 +576,7 @@ main(int argc, char *argv[])
 	}
 
 	/* Force quoting of all identifiers if requested. */
-	if (quote_all_identifiers && server_version >= 80300)
+	if (quote_all_identifiers)
 		executeCommand(conn, "SET quote_all_identifiers = true");
 
 	fprintf(OPF,"--\n-- Greenplum Database cluster dump\n--\n\n");
@@ -818,8 +818,10 @@ dumpResGroups(PGconn *conn)
 	 */
 	fprintf(OPF, "ALTER RESOURCE GROUP \"admin_group\" SET cpu_rate_limit 1;\n");
 	fprintf(OPF, "ALTER RESOURCE GROUP \"default_group\" SET cpu_rate_limit 1;\n");
+	fprintf(OPF, "ALTER RESOURCE GROUP \"system_group\" SET cpu_rate_limit 1;\n");
 	fprintf(OPF, "ALTER RESOURCE GROUP \"admin_group\" SET memory_limit 1;\n");
 	fprintf(OPF, "ALTER RESOURCE GROUP \"default_group\" SET memory_limit 1;\n");
+	fprintf(OPF, "ALTER RESOURCE GROUP \"system_group\" SET memory_limit 1;\n");
 
 	for (i = 0; i < PQntuples(res); i++)
 	{
@@ -843,7 +845,8 @@ dumpResGroups(PGconn *conn)
 
 		resetPQExpBuffer(buf);
 
-		if (0 == strcmp(groupname, "default_group") || 0 == strcmp(groupname, "admin_group"))
+		if (0 == strcmp(groupname, "default_group") || 0 == strcmp(groupname, "admin_group")
+				|| 0 == strcmp(groupname, "system_group"))
 		{
 			/*
 			 * We can't emit CREATE statements for the built-in groups as they
@@ -1348,10 +1351,13 @@ dumpRoles(PGconn *conn)
 		else
 			appendPQExpBufferStr(buf, " NOREPLICATION");
 
-		if (strcmp(PQgetvalue(res, i, i_rolbypassrls), "t") == 0)
-			appendPQExpBufferStr(buf, " BYPASSRLS");
-		else
-			appendPQExpBufferStr(buf, " NOBYPASSRLS");
+		if (server_version >= 90600)
+		{
+			if (strcmp(PQgetvalue(res, i, i_rolbypassrls), "t") == 0)
+				appendPQExpBufferStr(buf, " BYPASSRLS");
+			else
+				appendPQExpBufferStr(buf, " NOBYPASSRLS");
+		}
 
 		if (strcmp(PQgetvalue(res, i, i_rolconnlimit), "-1") != 0)
 			appendPQExpBuffer(buf, " CONNECTION LIMIT %s",
@@ -2202,7 +2208,7 @@ connectDatabase(const char *dbname, const char *connection_string,
 	 * our own major version.  (See also version check in pg_dump.c.)
 	 */
 	if (my_version != server_version
-		&& (server_version < 80300 ||		/* we can handle back to 8.3 */
+		&& (server_version < GPDB5_MAJOR_PGVERSION ||		/* we can handle back to 8.3 */
 			(server_version / 100) > (my_version / 100)))
 	{
 		pg_log_error("server version: %s; %s version: %s",

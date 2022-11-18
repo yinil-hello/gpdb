@@ -334,7 +334,7 @@ ExecRefreshMatView(RefreshMatViewStmt *stmt, const char *queryString,
 	 * it against access by any other process until commit (by which time it
 	 * will be gone).
 	 */
-	OIDNewHeap = make_new_heap(matviewOid, tableSpace, matviewRel->rd_rel->relam, relpersistence,
+	OIDNewHeap = make_new_heap(matviewOid, tableSpace, matviewRel->rd_rel->relam, NULL, relpersistence,
 							   ExclusiveLock, false, true);
 	LockRelationOid(OIDNewHeap, AccessExclusiveLock);
 	dest = CreateTransientRelDestReceiver(OIDNewHeap, matviewOid, concurrent, relpersistence,
@@ -444,7 +444,7 @@ refresh_matview_datafill(DestReceiver *dest, Query *query,
 	 *
 	 * See Github Issue for details: https://github.com/greenplum-db/gpdb/issues/11956
 	 */
-	List       *saved_dispatch_oids = GetAssignedOidsForDispatch();
+	List       *saved_dispatch_oids = SaveOidAssignments();
 
 	/* Lock and rewrite, using a copy to preserve the original query. */
 	copied_query = copyObject(query);
@@ -576,7 +576,7 @@ transientrel_init(QueryDesc *queryDesc)
 	 * will be gone).
 	 */
 	OIDNewHeap = make_new_heap(matviewOid, tableSpace, matviewRel->rd_rel->relam,
-							   relpersistence,
+							   NULL, relpersistence,
 							   ExclusiveLock, false, false);
 	LockRelationOid(OIDNewHeap, AccessExclusiveLock);
 
@@ -613,10 +613,8 @@ transientrel_startup(DestReceiver *self, int operation, TupleDesc typeinfo)
 	myState->bistate = GetBulkInsertState();
 	myState->processed = 0;
 
-	if (RelationIsAoRows(myState->transientrel))
-		appendonly_dml_init(myState->transientrel, CMD_INSERT);
-	else if (RelationIsAoCols(myState->transientrel))
-		aoco_dml_init(myState->transientrel, CMD_INSERT);
+	if (myState->transientrel->rd_tableam)
+		table_dml_init(myState->transientrel);
 
 	/* Not using WAL requires smgr_targblock be initially invalid */
 	Assert(RelationGetTargetBlock(transientrel) == InvalidBlockNumber);

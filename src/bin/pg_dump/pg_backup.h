@@ -26,6 +26,9 @@
 #include "fe_utils/simple_list.h"
 #include "libpq-fe.h"
 
+#define GPDB5_MAJOR_PGVERSION 80300
+#define GPDB6_MAJOR_PGVERSION 90400
+#define GPDB7_MAJOR_PGVERSION 120000
 
 typedef enum trivalue
 {
@@ -205,6 +208,10 @@ typedef struct _dumpOptions
 
 	int			sequence_data;	/* dump sequence data even in schema-only mode */
 	int			do_nothing;
+
+	/* GPDB */
+	bool		dumpGpPolicy;
+	bool		isGPbackend;
 } DumpOptions;
 
 /*

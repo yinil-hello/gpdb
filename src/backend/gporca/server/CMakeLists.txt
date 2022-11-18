@@ -79,7 +79,9 @@ NLJ-DistCol-No-Broadcast NLJ-EqAllCol-No-Broadcast NLJ-EqDistCol-InEqNonDistCol-
 NLJ-InEqDistCol-EqNonDistCol-Redistribute CorrelatedNLJWithTrueCondition InferPredicatesInnerOfLOJ
 InferredPredicatesConstraintSimplification NoPushdownPredicateWithCTEAnchor
 InferPredicatesForPartSQ InferPredicatesForQuantifiedSQ InferPredicatesForProcessedColumn DoubleNDVCardinalityEquals
-NotWellDefinedDisjunctConjunctPredicates;
+NotWellDefinedDisjunctConjunctPredicates InferPredicatesIntFromSubquery InferPredicatesFromExistsSubquery
+InferPredicatesIntFromExistsSubquery InferPredicatesFromMultiSubquery InferPredicatesMultiColumns
+InferPredicatesJoinSubquery;
 
 CLikeIDFTest:
 LIKE-Pattern-green LIKE-Pattern-green-2 LIKE-Pattern-Empty Nested-Or-Predicates Join-IDF
@@ -169,7 +171,8 @@ CJoinPredTest:
 MultipleDampedPredJoinCardinality MultipleIndependentPredJoinCardinality MultiDistKeyJoinCardinality
 MultiDistKeyWithOtherPredsJoinCardinality NoDistKeyMultiPredJoinCardinality OneDistKeyMultiPredJoinCardinality
 JoinOnViewWithCastedColumn JoinOnViewWithCastedColumnAndSubqueryInPredicate JoinOnViewWithVolatileColumn
-JoinOnViewWithMixOfPushableAndNonpushablePredicates JoinOnViewWithSetReturningColumn OuterJoinOnViewWithCastedColumn;
+JoinOnViewWithMixOfPushableAndNonpushablePredicates JoinOnViewWithSetReturningColumn OuterJoinOnViewWithCastedColumn JoinWithSubqueryProjectColumn
+AggSubqCollapseFalseFilter NestedJoinWithCastedColumn;
 
 CArrayCmpTest:
 ArrayConcat ArrayRef FoldedArrayCmp ArrayCmpAll
@@ -264,7 +267,8 @@ COuterJoin1Test:
 ExpandNAryJoinGreedyWithLOJOnly NaryWithLojAndNonLojChilds LOJ_bb_mpph LOJ-Condition-False
 LeftJoin-With-Pred-On-Inner LeftJoin-With-Pred-On-Inner2
 LeftJoin-With-Col-Const-Pred LeftJoin-With-Coalesce LOJWithFalsePred LeftJoin-DPv2-With-Select
-DPv2GreedyOnly DPv2MinCardOnly DPv2QueryOnly LOJ-PushDown LeftJoinDPv2JoinOrder LeftJoinNullsNotColocated;
+DPv2GreedyOnly DPv2MinCardOnly DPv2QueryOnly LOJ-PushDown LeftJoinDPv2JoinOrder
+LeftJoinNullsNotColocated InnerJoinBroadcastTableHashSpec LeftJoinBroadcastTableHashSpec InnerJoinReplicatedTableHashSpec;
 
 COuterJoin2Test:
 LOJ-IsNullPred Select-Proj-OuterJoin OuterJoin-With-OuterRefs Join-Disj-Subqs
@@ -330,7 +334,7 @@ ReplicatedTableInClause ReplicatedTableSequenceInsert;
 
 CTaintedReplicatedTest:
 InsertNonSingleton NonSingleton TaintedReplicatedAgg TaintedReplicatedWindowAgg TaintedReplicatedLimit TaintedReplicatedFilter
-InsertReplicatedIntoSerialHashDistributedTable;
+InsertReplicatedIntoSerialHashDistributedTable TaintedReplicatedTablesCTE ReplicatedTableWithAggNoMotion;
 
 CDqaTest:
 NonSplittableAgg DqaHavingMax DqaMax DqaMin DqaSubqueryMax DqaNoRedistribute;
@@ -352,13 +356,13 @@ Subq2PartialDecorrelate Subq2CorrSQInLOJOn Subq2NotInWhereLOJ Subq2OuterRef2InJo
 Index-Join-With-Subquery-In-Pred NestedSubqLimitBindings;
 
 CIndexOnlyScanTest:
-IndexOnlyScan-NoDistKeyInIndex;
+IndexOnlyScan-NoDistKeyInIndex IndexConstraintsMDidCache;
 
 CRightJoinTest:
 RightJoinHashed RightJoinRedistribute RightJoinReplicated RightJoinBothReplicated RightJoinNoDPSNonDistKey RightJoinTVF;
 
 CSqlFunctionTest:
-SqlFuncNullReject SqlFuncPredFactorize SqlFuncDmlScalar SqlFuncDmlTvf;
+SqlFuncNullReject SqlFuncPredFactorize SqlFuncDmlScalar SqlFuncDmlTvf CompositeTypeRelMdId;
 
 CScalarFuncPushDownTest:
 ScalarFuncPushedBelowGather ConstScalarFuncNotPushedBelowGather;
@@ -367,6 +371,7 @@ COrderedAggTest:
 CTAS_OrderedAgg_multiple_cols OrderedAgg_multiple_diffcol OrderedAgg_with_groupby OrderedAgg_computed_col
 OrderedAggUsingGroupColumnInDirectArg OrderedAgg_multiple_samecol OrderedAgg_with_nonOrderedAgg OrderedAgg_single
 OrderedAgg_array_fraction OrderedAgg_multiple_samecol_difforderespec OrderedAgg_with_nonconst_fraction
+OrderedAgg_skewed_data
 ")
 
 set(mdp_dir "../data/dxl/minidump/")

@@ -589,6 +589,7 @@ _outModifyTable(StringInfo str, const ModifyTable *node)
 	WRITE_UINT_FIELD(exclRelRTI);
 	WRITE_NODE_FIELD(exclRelTlist);
 	WRITE_NODE_FIELD(isSplitUpdates);
+	WRITE_BOOL_FIELD(forceTupleRouting);
 }
 
 static void
@@ -1145,9 +1146,6 @@ _outSort(StringInfo str, const Sort *node)
     WRITE_OID_ARRAY(sortOperators, node->numCols);
     WRITE_OID_ARRAY(collations, node->numCols);
     WRITE_BOOL_ARRAY(nullsFirst, node->numCols);
-
-	/* CDB */
-    WRITE_BOOL_FIELD(noduplicates);
 }
 
 static void
@@ -1335,7 +1333,6 @@ _outSplitUpdate(StringInfo str, const SplitUpdate *node)
 	WRITE_NODE_TYPE("SplitUpdate");
 
 	WRITE_INT_FIELD(actionColIdx);
-	WRITE_INT_FIELD(tupleoidColIdx);
 	WRITE_NODE_FIELD(insertColIdx);
 	WRITE_NODE_FIELD(deleteColIdx);
 
@@ -3135,6 +3132,7 @@ _outCreateStmtInfo(StringInfo str, const CreateStmt *node)
 	WRITE_STRING_FIELD(tablespacename);
 	WRITE_STRING_FIELD(accessMethod);
 	WRITE_BOOL_FIELD(if_not_exists);
+	WRITE_BOOL_FIELD(gp_style_alter_part);
 
 	WRITE_NODE_FIELD(distributedBy);
 	WRITE_NODE_FIELD(partitionBy);

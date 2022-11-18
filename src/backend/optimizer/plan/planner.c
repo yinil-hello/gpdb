@@ -7319,14 +7319,17 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 			{
 				Path	   *path = (Path *) lfirst(lc);
 				double		dNumGroups;
-				bool		is_sorted = false;
+				bool		is_sorted;
 
-				if (pathkeys_contained_in(root->group_pathkeys, path->pathkeys))
-				{
-					if (path != partially_grouped_rel->cheapest_total_path)
-						continue;
-					is_sorted = true;
-				}
+				is_sorted = pathkeys_contained_in(root->group_pathkeys, path->pathkeys);
+
+				/*
+				 * Insert a Sort node, if required. But there's no point in
+				 * sorting anything but the cheapest path.
+				 */
+				if (!is_sorted && path != partially_grouped_rel->cheapest_total_path)
+					continue;
+
 				path = cdb_prepare_path_for_sorted_agg(root,
 													   is_sorted,
 													   grouped_rel,
@@ -7363,7 +7366,7 @@ add_paths_to_grouping_rel(PlannerInfo *root, RelOptInfo *input_rel,
 											 agg_final_costs,
 											 dNumGroups));
 				}
-						/* Group nodes are not used in GPDB */
+				/* Group nodes are not used in GPDB */
 #if 0
 				else
 					add_path(grouped_rel, (Path *)
@@ -8508,20 +8511,28 @@ make_new_rollups_for_hash_grouping_set(PlannerInfo        *root,
 		RollupData *rollup = lfirst_node(RollupData, lc);
 
 		/*
+		 * If there are any empty grouping sets and all non-empty grouping
+		 * sets are unsortable, there will be a rollup containing only
+		 * empty groups. We handle those specially below.
+		 * Note: This case only holds when path is equal to null.
+		 */
+		if (rollup->groupClause == NIL)
+		{
+			unhashed_rollup = rollup;
+			break;
+		}
+
+		/*
 		 * If we find an unhashable rollup that's not been skipped by the
 		 * "actually sorted" check above, we can't cope; we'd need sorted
 		 * input (with a different sort order) but we can't get that here.
 		 * So bail out; we'll get a valid path from the is_sorted case
 		 * instead.
-		 *
-		 * The mere presence of empty grouping sets doesn't make a rollup
-		 * unhashable (see preprocess_grouping_sets), we handle those
-		 * specially below.
 		 */
 		if (!rollup->hashable)
 			return NULL;
-		else
-			sets_data = list_concat(sets_data, list_copy(rollup->gsets_data));
+
+		sets_data = list_concat(sets_data, list_copy(rollup->gsets_data));
 	}
 	foreach(lc, sets_data)
 	{

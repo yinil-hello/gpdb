@@ -22,6 +22,7 @@
 
 #include "access/bitmap.h"
 #include "access/reloptions.h"
+#include "catalog/pg_attribute_encoding.h"
 #include "catalog/pg_type.h"
 #include "cdb/cdbappendonlyam.h"
 #include "cdb/cdbvars.h"
@@ -53,6 +54,15 @@ static relopt_bool boolRelOpts_gp[] =
 			AccessExclusiveLock
 		},
 		AO_DEFAULT_CHECKSUM
+	},
+	{
+		{
+			SOPT_ANALYZEHLL,
+			"Enable HLL stats collection during analyze",
+			RELOPT_KIND_HEAP | RELOPT_KIND_TOAST | RELOPT_KIND_APPENDOPTIMIZED,
+			ShareUpdateExclusiveLock
+		},
+		ANALYZE_DEFAULT_HLL
 	},
 	/* list terminator */
 	{{NULL}}
@@ -114,7 +124,6 @@ static relopt_string stringRelOpts_gp[] =
 	{{NULL}}
 };
 
-static void free_options_deep(relopt_value *options, int num_options);
 static relopt_value *get_option_set(relopt_value *options, int num_options, const char *opt_name);
 static bool reloption_is_default(const char *optstr, int optlen);
 
@@ -141,8 +150,8 @@ initialize_reloptions_gp(void)
 		add_bool_reloption(boolRelOpts_gp[i].gen.kinds,
 						   (char *) boolRelOpts_gp[i].gen.name,
 						   (char *) boolRelOpts_gp[i].gen.desc,
-						   boolRelOpts_gp[i].default_val);
-		set_reloption_lockmode(boolRelOpts_gp[i].gen.name, boolRelOpts_gp[i].gen.lockmode);
+						   boolRelOpts_gp[i].default_val,
+						   boolRelOpts_gp[i].gen.lockmode);
 	}
 
 	for (i = 0; intRelOpts_gp[i].gen.name; i++)
@@ -152,8 +161,8 @@ initialize_reloptions_gp(void)
 						  (char *) intRelOpts_gp[i].gen.desc,
 						  intRelOpts_gp[i].default_val,
 						  intRelOpts_gp[i].min,
-						  intRelOpts_gp[i].max);
-		set_reloption_lockmode(intRelOpts_gp[i].gen.name, intRelOpts_gp[i].gen.lockmode);
+						  intRelOpts_gp[i].max,
+						  intRelOpts_gp[i].gen.lockmode);
 	}
 
 	for (i = 0; realRelOpts_gp[i].gen.name; i++)
@@ -162,8 +171,8 @@ initialize_reloptions_gp(void)
 						   (char *) realRelOpts_gp[i].gen.name,
 						   (char *) realRelOpts_gp[i].gen.desc,
 						   realRelOpts_gp[i].default_val,
-						   realRelOpts_gp[i].min, realRelOpts_gp[i].max);
-		set_reloption_lockmode(realRelOpts_gp[i].gen.name, realRelOpts_gp[i].gen.lockmode);
+						   realRelOpts_gp[i].min, realRelOpts_gp[i].max,
+						   realRelOpts_gp[i].gen.lockmode);
 	}
 
 	for (i = 0; stringRelOpts_gp[i].gen.name; i++)
@@ -172,8 +181,8 @@ initialize_reloptions_gp(void)
 							 (char *) stringRelOpts_gp[i].gen.name,
 							 (char *) stringRelOpts_gp[i].gen.desc,
 							 NULL,
-							 stringRelOpts_gp[i].validate_cb);
-		set_reloption_lockmode(stringRelOpts_gp[i].gen.name, stringRelOpts_gp[i].gen.lockmode);
+							 stringRelOpts_gp[i].validate_cb,
+							 stringRelOpts_gp[i].gen.lockmode);
 	}
 }
 
@@ -534,7 +543,8 @@ transformAOStdRdOptions(StdRdOptions *opts, Datum withOpts)
 	bool		foundBlksz = false,
 				foundComptype = false,
 				foundComplevel = false,
-				foundChecksum = false;
+				foundChecksum = false,
+				foundAnalyzeHLL = false;
 
 	/*
 	 * withOpts must be parsed to see if an option was spcified in WITH()
@@ -617,6 +627,17 @@ transformAOStdRdOptions(StdRdOptions *opts, Datum withOpts)
 				astate = accumArrayResult(astate, d, false, TEXTOID,
 										  CurrentMemoryContext);
 			}
+			soptLen = strlen(SOPT_ANALYZEHLL);
+			if (withLen > soptLen &&
+				pg_strncasecmp(strval, SOPT_ANALYZEHLL, soptLen) == 0)
+			{
+				foundAnalyzeHLL = true;
+				d = CStringGetTextDatum(psprintf("%s=%s",
+												 SOPT_ANALYZEHLL,
+												 (opts->analyze_hll_non_part_table ? "true" : "false")));
+				astate = accumArrayResult(astate, d, false, TEXTOID,
+										  CurrentMemoryContext);
+			}
 		}
 	}
 
@@ -669,6 +690,14 @@ transformAOStdRdOptions(StdRdOptions *opts, Datum withOpts)
 		astate = accumArrayResult(astate, d, false, TEXTOID,
 								  CurrentMemoryContext);
 	}
+	if ((opts->analyze_hll_non_part_table != ANALYZE_DEFAULT_HLL) && !foundAnalyzeHLL)
+	{
+		d = CStringGetTextDatum(psprintf("%s=%s",
+										 SOPT_ANALYZEHLL,
+										 (opts->analyze_hll_non_part_table ? "true" : "false")));
+		astate = accumArrayResult(astate, d, false, TEXTOID,
+								  CurrentMemoryContext);
+	}
 	return astate ?
 		makeArrayResult(astate, CurrentMemoryContext) :
 		PointerGetDatum(NULL);
@@ -711,7 +740,13 @@ reloption_is_default(const char *optstr, int optlen)
 										 SOPT_CHECKSUM,
 										 AO_DEFAULT_CHECKSUM ? "true" : "false");
 	}
-
+	else if (optlen > strlen(SOPT_ANALYZEHLL) &&
+		pg_strncasecmp(optstr, SOPT_ANALYZEHLL, strlen("analyze_hll_non_part_table")) == 0)
+	{
+		defaultopt = psprintf("%s=%s",
+							  SOPT_ANALYZEHLL,
+										 ANALYZE_DEFAULT_HLL ? "true" : "false");
+	}
 	if (defaultopt != NULL)
 		res = strlen(defaultopt) == optlen && 
 				pg_strncasecmp(optstr, defaultopt, optlen) == 0;
@@ -1144,6 +1179,9 @@ setDefaultCompressionLevel(char *compresstype)
 		return 1;
 }
 
+/*
+ * It's used to prevent persistent memory leaks when parseRelOptions() is called repeatedly.
+ */
 void
 free_options_deep(relopt_value *options, int num_options)
 {
@@ -1636,6 +1674,10 @@ find_crsd(const char *column, List *stenc)
  * 'colDefs' - list of ColumnDefs
  * 'stenc' - list of ColumnReferenceStorageDirectives
  * 'withOptions' - list of WITH options
+ * 'parentenc' - list of ColumnReferenceStorageDirectives explicitly defined for
+ * parent partition
+ * 'explicitOnly' - Only return explicitly defined column encoding values
+ *  to be used for child partitions
  *
  * ENCODING options can be attached to column definitions, like
  * "mycolumn integer ENCODING ..."; these go into ColumnDefs. They
@@ -1664,7 +1706,7 @@ find_crsd(const char *column, List *stenc)
  * This needs access to possible inherited columns, so it can only be done after
  * expanding them.
  */
-List* transformColumnEncoding(Relation rel, List *colDefs, List *stenc, List *withOptions, bool rootpartition, bool errorOnEncodingClause)
+List* transformColumnEncoding(Relation rel, List *colDefs, List *stenc, List *withOptions, List *parentenc, bool explicitOnly, bool errorOnEncodingClause)
 {
 	ColumnReferenceStorageDirective *deflt = NULL;
 	ListCell   *lc;
@@ -1739,7 +1781,8 @@ List* transformColumnEncoding(Relation rel, List *colDefs, List *stenc, List *wi
 		 * 1. An explicit encoding clause in the ColumnDef
 		 * 2. A column reference storage directive for this column
 		 * 3. A default column encoding in the statement
-		 * 4. A default for the type.
+		 * 4. Parent partition's column encoding values
+		 * 5. A default for the type.
 		 */
 		if (d->encoding)
 		{
@@ -1759,9 +1802,14 @@ List* transformColumnEncoding(Relation rel, List *colDefs, List *stenc, List *wi
 			{
 				if (deflt)
 					encoding = copyObject(deflt->encoding);
-				else if (!rootpartition)
+				else if (!explicitOnly)
 				{
-					if (d->typeName)
+					if (parentenc)
+					{
+						ColumnReferenceStorageDirective *parent_col_encoding = find_crsd(d->colname, parentenc);
+						encoding = transformStorageEncodingClause(parent_col_encoding->encoding, true);
+					}
+					else if (d->typeName)
 						encoding = get_type_encoding(d->typeName);
 					if (!encoding)
 						encoding = default_column_encoding_clause(rel);
@@ -1780,6 +1828,90 @@ List* transformColumnEncoding(Relation rel, List *colDefs, List *stenc, List *wi
 	}
 
 	return result;
+}
+
+/*
+ * Update the corresponding ColumnReferenceStorageDirective clause
+ * in a list of such clauses: current_encodings.
+ *
+ * return whether current_encodings was modified
+ * (either existing changed or new crsd added for new column)
+ */
+bool
+updateEncodingList(List *current_encodings, ColumnReferenceStorageDirective *new_crsd)
+{
+	ListCell *lc_current;
+	ColumnReferenceStorageDirective *crsd = NULL;
+	foreach(lc_current, current_encodings)
+	{
+		ColumnReferenceStorageDirective *current_crsd = (ColumnReferenceStorageDirective *) lfirst(lc_current);
+
+		if (current_crsd->deflt == false &&
+			strcmp(new_crsd->column, current_crsd->column) == 0)
+		{
+			crsd = current_crsd;
+			break;
+		}
+	}
+	if (crsd)
+	{
+		ListCell *lc1;
+		List *merged_encodings = NIL;
+		bool is_changed = false;
+
+		/*
+		 * Create a new list of encodings merging the existing and new values.
+		 *
+		 * Assuming crsd->encoding is complete list of all encoding attributes,
+		 * but new_crsd->encoding may or may not be complete list.
+		 */
+		foreach(lc1, crsd->encoding)
+		{
+			ListCell *lc2;
+			DefElem  *el1        = lfirst(lc1);
+			DefElem  *el2;
+			bool current_updated = false;
+			foreach (lc2, new_crsd->encoding)
+			{
+				el2 = lfirst(lc2);
+				if ((strcmp(el1->defname, el2->defname) == 0) &&
+					(strcmp(defGetString(el1), defGetString(el2)) != 0))
+				{
+					current_updated  = true;
+					is_changed       = true;
+					merged_encodings = lappend(merged_encodings, copyObject(el2));
+				}
+			}
+			if (!current_updated)
+				merged_encodings = lappend(merged_encodings, copyObject(el1));
+		}
+		/*
+		 * Validate the merged encodings to weed out duplicate parameters and/or
+		 * invalid parameter values.
+		 * We can have duplicate parameters if user enters for eg:
+		 * ALTER COLUMN a SET ENCODING (compresslevel=3, compresslevel=4);
+		 */
+		merged_encodings =
+			transformStorageEncodingClause(merged_encodings, true);
+
+		/*
+		 * Update current_encodings in place with the merged and validated merged_encodings
+		 */
+		list_free_deep(crsd->encoding);
+		crsd->encoding = merged_encodings;
+		return is_changed;
+	}
+	else
+	{
+		/*
+		 * new_crsd->column not found in current_encodings
+		 * Must be coming from a newly added column
+		 */
+
+		new_crsd->encoding = transformStorageEncodingClause(new_crsd->encoding, true);
+		lappend(current_encodings, new_crsd);
+		return true;
+	}
 }
 
 /*

@@ -54,7 +54,6 @@
 #include "gpopt/operators/CPhysicalMotionRoutedDistribute.h"
 #include "gpopt/operators/CPhysicalNLJoin.h"
 #include "gpopt/operators/CPhysicalPartitionSelector.h"
-#include "gpopt/operators/CPhysicalRowTrigger.h"
 #include "gpopt/operators/CPhysicalScalarAgg.h"
 #include "gpopt/operators/CPhysicalSequenceProject.h"
 #include "gpopt/operators/CPhysicalSort.h"
@@ -118,7 +117,6 @@
 #include "naucrates/dxl/operators/CDXLPhysicalRedistributeMotion.h"
 #include "naucrates/dxl/operators/CDXLPhysicalResult.h"
 #include "naucrates/dxl/operators/CDXLPhysicalRoutedDistributeMotion.h"
-#include "naucrates/dxl/operators/CDXLPhysicalRowTrigger.h"
 #include "naucrates/dxl/operators/CDXLPhysicalSequence.h"
 #include "naucrates/dxl/operators/CDXLPhysicalSort.h"
 #include "naucrates/dxl/operators/CDXLPhysicalSplit.h"
@@ -504,11 +502,6 @@ CTranslatorExprToDXL::CreateDXLNode(CExpression *pexpr,
 			break;
 		case COperator::EopPhysicalSplit:
 			dxlnode = CTranslatorExprToDXL::PdxlnSplit(
-				pexpr, colref_array, pdrgpdsBaseTables, pulNonGatherMotions,
-				pfDML);
-			break;
-		case COperator::EopPhysicalRowTrigger:
-			dxlnode = CTranslatorExprToDXL::PdxlnRowTrigger(
 				pexpr, colref_array, pdrgpdsBaseTables, pulNonGatherMotions,
 				pfDML);
 			break;
@@ -974,9 +967,6 @@ CTranslatorExprToDXL::PdxlnIndexOnlyScan(CExpression *pexprIndexOnlyScan,
 //	@doc:
 //		Create a DXL scalar bitmap index probe from an optimizer
 //		scalar bitmap index probe operator.
-//
-//	GPDB_12_MERGE_FIXME: whenever we modify this function, we may
-//	as well consider updating PdxlnBitmapIndexProbeForChildPart().
 //
 //---------------------------------------------------------------------------
 CDXLNode *
@@ -4913,15 +4903,6 @@ CTranslatorExprToDXL::PdxlnDML(CExpression *pexpr,
 		segid_colid = pcrSegmentId->Id();
 	}
 
-	CColRef *pcrTupleOid = popDML->PcrTupleOid();
-	ULONG tuple_oid = 0;
-	BOOL preserve_oids = false;
-	if (nullptr != pcrTupleOid)
-	{
-		preserve_oids = true;
-		tuple_oid = pcrTupleOid->Id();
-	}
-
 	CDXLNode *child_dxlnode = CreateDXLNode(
 		pexprChild, pdrgpcrSource, pdrgpdsBaseTables, pulNonGatherMotions,
 		pfDML, false /*fRemap*/, false /*fRoot*/);
@@ -4934,8 +4915,8 @@ CTranslatorExprToDXL::PdxlnDML(CExpression *pexpr,
 		GetDXLDirectDispatchInfo(pexpr);
 	CDXLPhysicalDML *pdxlopDML = GPOS_NEW(m_mp) CDXLPhysicalDML(
 		m_mp, dxl_dml_type, table_descr, pdrgpul, action_colid, oid_colid,
-		ctid_colid, segid_colid, preserve_oids, tuple_oid,
-		dxl_direct_dispatch_info, popDML->IsInputSortReq());
+		ctid_colid, segid_colid, dxl_direct_dispatch_info,
+		popDML->IsInputSortReq(), popDML->FSplit());
 
 	// project list
 	CColRefSet *pcrsOutput = pexpr->Prpp()->PcrsRequired();
@@ -5049,8 +5030,8 @@ CTranslatorExprToDXL::PdxlnCTAS(CExpression *pexpr,
 		GPOS_NEW(m_mp) CMDName(m_mp, pmdrel->Mdname().GetMDName()),
 		dxl_col_descr_array, pmdrel->GetDxlCtasStorageOption(),
 		pmdrel->GetRelDistribution(), pdrgpulDistr, pmdrel->GetDistrOpClasses(),
-		pmdrel->IsTemporary(), pmdrel->HasOids(),
-		pmdrel->RetrieveRelStorageType(), pdrgpul, vartypemod_array);
+		pmdrel->IsTemporary(), pmdrel->RetrieveRelStorageType(), pdrgpul,
+		vartypemod_array);
 
 	CDXLNode *pdxlnCTAS = GPOS_NEW(m_mp) CDXLNode(m_mp, pdxlopCTAS);
 	CDXLPhysicalProperties *dxl_properties = GetProperties(pexpr);
@@ -5087,13 +5068,14 @@ CTranslatorExprToDXL::GetDXLDirectDispatchInfo(CExpression *pexprDML)
 	CTableDescriptor *ptabdesc = popDML->Ptabdesc();
 	const CColumnDescriptorArray *pdrgpcoldescDist =
 		ptabdesc->PdrgpcoldescDist();
-
-	if (CLogicalDML::EdmlInsert != popDML->Edmlop() ||
+	if ((CLogicalDML::EdmlInsert != popDML->Edmlop() &&
+		 CLogicalDML::EdmlDelete != popDML->Edmlop()) ||
 		IMDRelation::EreldistrHash != ptabdesc->GetRelDistribution() ||
 		1 < pdrgpcoldescDist->Size())
 	{
-		// directed dispatch only supported for insert statements on hash-distributed tables
-		// with a single distribution column
+		// directed dispatch only supported for insert and delete statements
+		// on hash-distributed tables with a single distribution column
+
 		return nullptr;
 	}
 
@@ -5169,7 +5151,6 @@ CTranslatorExprToDXL::PdxlnSplit(CExpression *pexpr,
 	ULONG action_colid = 0;
 	ULONG ctid_colid = 0;
 	ULONG segid_colid = 0;
-	ULONG tuple_oid = 0;
 
 	// extract components
 	CPhysicalSplit *popSplit = CPhysicalSplit::PopConvert(pexpr->Pop());
@@ -5189,14 +5170,6 @@ CTranslatorExprToDXL::PdxlnSplit(CExpression *pexpr,
 	GPOS_ASSERT(nullptr != pcrSegmentId);
 	segid_colid = pcrSegmentId->Id();
 
-	CColRef *pcrTupleOid = popSplit->PcrTupleOid();
-	BOOL preserve_oids = false;
-	if (nullptr != pcrTupleOid)
-	{
-		preserve_oids = true;
-		tuple_oid = pcrTupleOid->Id();
-	}
-
 	CColRefArray *pdrgpcrDelete = popSplit->PdrgpcrDelete();
 	ULongPtrArray *delete_colid_array = CUtils::Pdrgpul(m_mp, pdrgpcrDelete);
 
@@ -5214,9 +5187,9 @@ CTranslatorExprToDXL::PdxlnSplit(CExpression *pexpr,
 	pdrgpcrRequired->Release();
 	pcrsRequired->Release();
 
-	CDXLPhysicalSplit *pdxlopSplit = GPOS_NEW(m_mp) CDXLPhysicalSplit(
-		m_mp, delete_colid_array, insert_colid_array, action_colid, ctid_colid,
-		segid_colid, preserve_oids, tuple_oid);
+	CDXLPhysicalSplit *pdxlopSplit = GPOS_NEW(m_mp)
+		CDXLPhysicalSplit(m_mp, delete_colid_array, insert_colid_array,
+						  action_colid, ctid_colid, segid_colid);
 
 	// project list
 	CColRefSet *pcrsOutput = pexpr->Prpp()->PcrsRequired();
@@ -5235,88 +5208,6 @@ CTranslatorExprToDXL::PdxlnSplit(CExpression *pexpr,
 										   false /* validate_children */);
 #endif
 	return pdxlnSplit;
-}
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorExprToDXL::PdxlnRowTrigger
-//
-//	@doc:
-//		Translate a row trigger operator
-//
-//---------------------------------------------------------------------------
-CDXLNode *
-CTranslatorExprToDXL::PdxlnRowTrigger(CExpression *pexpr,
-									  CColRefArray *,  // colref_array,
-									  CDistributionSpecArray *pdrgpdsBaseTables,
-									  ULONG *pulNonGatherMotions, BOOL *pfDML)
-{
-	GPOS_ASSERT(nullptr != pexpr);
-	GPOS_ASSERT(1 == pexpr->Arity());
-
-	// extract components
-	CPhysicalRowTrigger *popRowTrigger =
-		CPhysicalRowTrigger::PopConvert(pexpr->Pop());
-
-	CExpression *pexprChild = (*pexpr)[0];
-
-	IMDId *rel_mdid = popRowTrigger->GetRelMdId();
-	rel_mdid->AddRef();
-
-	INT type = popRowTrigger->GetType();
-
-	CColRefSet *pcrsRequired = GPOS_NEW(m_mp) CColRefSet(m_mp);
-	ULongPtrArray *colids_old = nullptr;
-	ULongPtrArray *colids_new = nullptr;
-
-	CColRefArray *pdrgpcrOld = popRowTrigger->PdrgpcrOld();
-	if (nullptr != pdrgpcrOld)
-	{
-		colids_old = CUtils::Pdrgpul(m_mp, pdrgpcrOld);
-		pcrsRequired->Include(pdrgpcrOld);
-	}
-
-	CColRefArray *pdrgpcrNew = popRowTrigger->PdrgpcrNew();
-	if (nullptr != pdrgpcrNew)
-	{
-		colids_new = CUtils::Pdrgpul(m_mp, pdrgpcrNew);
-		pcrsRequired->Include(pdrgpcrNew);
-	}
-
-	CColRefArray *pdrgpcrRequired = pcrsRequired->Pdrgpcr(m_mp);
-	CDXLNode *child_dxlnode = CreateDXLNode(
-		pexprChild, pdrgpcrRequired, pdrgpdsBaseTables, pulNonGatherMotions,
-		pfDML, false /*fRemap*/, false /*fRoot*/);
-	pdrgpcrRequired->Release();
-	pcrsRequired->Release();
-
-	CDXLPhysicalRowTrigger *pdxlopRowTrigger = GPOS_NEW(m_mp)
-		CDXLPhysicalRowTrigger(m_mp, rel_mdid, type, colids_old, colids_new);
-
-	// project list
-	CColRefSet *pcrsOutput = pexpr->Prpp()->PcrsRequired();
-	CDXLNode *pdxlnPrL = nullptr;
-	if (nullptr != pdrgpcrNew)
-	{
-		pdxlnPrL = PdxlnProjList(pcrsOutput, pdrgpcrNew);
-	}
-	else
-	{
-		pdxlnPrL = PdxlnProjList(pcrsOutput, pdrgpcrOld);
-	}
-
-	CDXLNode *pdxlnRowTrigger = GPOS_NEW(m_mp) CDXLNode(m_mp, pdxlopRowTrigger);
-	CDXLPhysicalProperties *dxl_properties = GetProperties(pexpr);
-	pdxlnRowTrigger->SetProperties(dxl_properties);
-
-	pdxlnRowTrigger->AddChild(pdxlnPrL);
-	pdxlnRowTrigger->AddChild(child_dxlnode);
-
-#ifdef GPOS_DEBUG
-	pdxlnRowTrigger->GetOperator()->AssertValid(pdxlnRowTrigger,
-												false /* validate_children */);
-#endif
-	return pdxlnRowTrigger;
 }
 
 //---------------------------------------------------------------------------
@@ -6195,8 +6086,10 @@ CTranslatorExprToDXL::GetWindowFrame(CWindowFrame *pwf)
 	}
 
 	// mappings for frame info in expression and dxl worlds
-	const ULONG rgulSpecMapping[][2] = {{CWindowFrame::EfsRows, EdxlfsRow},
-										{CWindowFrame::EfsRange, EdxlfsRange}};
+	const ULONG rgulSpecMapping[][2] = {
+		{CWindowFrame::EfsRows, EdxlfsRow},
+		{CWindowFrame::EfsRange, EdxlfsRange},
+		{CWindowFrame::EfsGroups, EdxlfsGroups}};
 
 	const ULONG rgulBoundaryMapping[][2] = {
 		{CWindowFrame::EfbUnboundedPreceding, EdxlfbUnboundedPreceding},
@@ -6242,8 +6135,10 @@ CTranslatorExprToDXL::GetWindowFrame(CWindowFrame *pwf)
 		pdxlnTrailing->AddChild(PdxlnScalar(pwf->PexprTrailing()));
 	}
 
-	return GPOS_NEW(m_mp) CDXLWindowFrame(edxlfs, frame_exc_strategy,
-										  pdxlnLeading, pdxlnTrailing);
+	return GPOS_NEW(m_mp) CDXLWindowFrame(
+		edxlfs, frame_exc_strategy, pdxlnLeading, pdxlnTrailing,
+		pwf->StartInRangeFunc(), pwf->EndInRangeFunc(), pwf->InRangeColl(),
+		pwf->InRangeAsc(), pwf->InRangeNullsFirst());
 }
 
 
@@ -6900,141 +6795,6 @@ CTranslatorExprToDXL::PdxlnCondForChildPart(
 
 	return pdxlnCond;
 }
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorExprToDXL::PdxlnBitmapIndexPathForChildPart
-//
-//	@doc:
-//		Construct a DXL BitmapTableScan's bitmap index path child
-//		DLX node for a child partition.
-//
-//---------------------------------------------------------------------------
-CDXLNode *
-CTranslatorExprToDXL::PdxlnBitmapIndexPathForChildPart(
-	const ColRefToUlongMap *root_col_mapping, const CColRefArray *part_colrefs,
-	const CColRefArray *root_colrefs, const IMDRelation *part,
-	CExpression *pexprBitmapIndexPath)
-{
-	GPOS_CHECK_STACK_SIZE;
-
-	switch (pexprBitmapIndexPath->Pop()->Eopid())
-	{
-		case COperator::EopScalarBitmapIndexProbe:
-			return PdxlnBitmapIndexProbeForChildPart(
-				root_col_mapping, part_colrefs, root_colrefs, part,
-				pexprBitmapIndexPath);
-		case COperator::EopScalarBitmapBoolOp:
-		{
-			GPOS_ASSERT(nullptr != pexprBitmapIndexPath);
-			GPOS_ASSERT(2 == pexprBitmapIndexPath->Arity());
-
-			CScalarBitmapBoolOp *popBitmapBoolOp =
-				CScalarBitmapBoolOp::PopConvert(pexprBitmapIndexPath->Pop());
-			CExpression *pexprLeft = (*pexprBitmapIndexPath)[0];
-			CExpression *pexprRight = (*pexprBitmapIndexPath)[1];
-
-			CDXLNode *dxlnode_left = PdxlnBitmapIndexPathForChildPart(
-				root_col_mapping, part_colrefs, root_colrefs, part, pexprLeft);
-			CDXLNode *dxlnode_right = PdxlnBitmapIndexPathForChildPart(
-				root_col_mapping, part_colrefs, root_colrefs, part, pexprRight);
-
-			IMDId *mdid_type = popBitmapBoolOp->MdidType();
-			mdid_type->AddRef();
-
-			CDXLScalarBitmapBoolOp::EdxlBitmapBoolOp edxlbitmapop =
-				CDXLScalarBitmapBoolOp::EdxlbitmapAnd;
-
-			if (CScalarBitmapBoolOp::EbitmapboolOr ==
-				popBitmapBoolOp->Ebitmapboolop())
-			{
-				edxlbitmapop = CDXLScalarBitmapBoolOp::EdxlbitmapOr;
-			}
-
-			return GPOS_NEW(m_mp) CDXLNode(
-				m_mp,
-				GPOS_NEW(m_mp)
-					CDXLScalarBitmapBoolOp(m_mp, mdid_type, edxlbitmapop),
-				dxlnode_left, dxlnode_right);
-		}
-		default:
-			GPOS_RAISE(gpopt::ExmaGPOPT, gpopt::ExmiUnsupportedOp,
-					   pexprBitmapIndexPath->Pop()->SzId());
-	}
-}
-
-//---------------------------------------------------------------------------
-//	@function:
-//		CTranslatorExprToDXL::PdxlnBitmapIndexProbeForChildPart
-//
-//	@doc:
-//		Create a DXL scalar bitmap index probe from an optimizer
-//		scalar bitmap index probe operator for a child partition.
-//
-//		GPDB_12_MERGE_FIXME: this function should always keep parity
-//		with PdxlnBitmapIndexProbe(). We did not extract the duplicate
-//		code into a common function because the handlings for child
-//		partition are also all over this function.
-//---------------------------------------------------------------------------
-CDXLNode *
-CTranslatorExprToDXL::PdxlnBitmapIndexProbeForChildPart(
-	const ColRefToUlongMap *root_col_mapping, const CColRefArray *part_colrefs,
-	const CColRefArray *root_colrefs, const IMDRelation *part,
-	CExpression *pexprBitmapIndexProbe)
-{
-	GPOS_ASSERT(nullptr != pexprBitmapIndexProbe);
-	CScalarBitmapIndexProbe *pop =
-		CScalarBitmapIndexProbe::PopConvert(pexprBitmapIndexProbe->Pop());
-
-	// create index descriptor
-	CIndexDescriptor *pindexdesc = pop->Pindexdesc();
-	IMDId *pmdidIndex = pindexdesc->MDId();
-
-	// construct set of child indexes from parent list of child indexes
-	const IMDIndex *md_index = m_pmda->RetrieveIndex(pmdidIndex);
-	IMdIdArray *child_indexes = md_index->ChildIndexMdids();
-
-	MdidHashSet *child_index_mdids_set = GPOS_NEW(m_mp) MdidHashSet(m_mp);
-	for (ULONG ul = 0; ul < child_indexes->Size(); ul++)
-	{
-		(*child_indexes)[ul]->AddRef();
-		child_index_mdids_set->Insert((*child_indexes)[ul]);
-	}
-
-	CDXLIndexDescr *dxl_index_descr = PdxlnIndexDescForPart(
-		m_mp, child_index_mdids_set, part, pindexdesc->Name().Pstr());
-
-	child_index_mdids_set->Release();
-
-	CDXLScalarBitmapIndexProbe *dxl_op =
-		GPOS_NEW(m_mp) CDXLScalarBitmapIndexProbe(m_mp, dxl_index_descr);
-	CDXLNode *pdxlnBitmapIndexProbe = GPOS_NEW(m_mp) CDXLNode(m_mp, dxl_op);
-
-	// translate index predicates
-	CExpression *pexprCond = (*pexprBitmapIndexProbe)[0];
-	CDXLNode *pdxlnIndexCondList = GPOS_NEW(m_mp)
-		CDXLNode(m_mp, GPOS_NEW(m_mp) CDXLScalarIndexCondList(m_mp));
-	CExpressionArray *pdrgpexprConds =
-		CPredicateUtils::PdrgpexprConjuncts(m_mp, pexprCond);
-	const ULONG length = pdrgpexprConds->Size();
-	for (ULONG ul = 0; ul < length; ul++)
-	{
-		CExpression *pexprIndexCond = (*pdrgpexprConds)[ul];
-		CDXLNode *pdxlnIndexCond = PdxlnCondForChildPart(
-			root_col_mapping, part_colrefs, root_colrefs, pexprIndexCond);
-		pdxlnIndexCondList->AddChild(pdxlnIndexCond);
-	}
-	pdrgpexprConds->Release();
-	pdxlnBitmapIndexProbe->AddChild(pdxlnIndexCondList);
-
-#ifdef GPOS_DEBUG
-	pdxlnBitmapIndexProbe->GetOperator()->AssertValid(
-		pdxlnBitmapIndexProbe, false /*validate_children*/);
-#endif
-
-	return pdxlnBitmapIndexProbe;
-}
-
 
 //---------------------------------------------------------------------------
 //	@function:

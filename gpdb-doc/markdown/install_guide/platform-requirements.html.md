@@ -107,7 +107,7 @@ Greenplum Database 6 uses Python 2.7.12, which is included with the product inst
 
 **Important:** SSL is supported only on the Greenplum Database coordinator host system. It cannot be used on the segment host systems.
 
-**Important:** For all Greenplum Database host systems, if SELinux is enabled in `Enforcing` mode then the Greenplum process and users can operate successfully in the default `Unconfined` context. If increased confinement is required, then you must configure SELinux contexts, policies, and domains based on your security requirements, and test your configuration to ensure there is no functionality or performance impact to Greenplum Database. Similarly, you should either disable or configure firewall software as needed to allow communication between Greenplum hosts. See [Disable or Configure SELinux](prep_os.html).
+**Important:** For all Greenplum Database host systems, if SELinux is enabled in `Enforcing` mode then the Greenplum process and users can operate successfully in the default `Unconfined` context. If increased confinement is required, then you must configure SELinux contexts, policies, and domains based on your security requirements, and test your configuration to ensure there is no functionality or performance impact to Greenplum Database. Similarly, you should either deactivate or configure firewall software as needed to allow communication between Greenplum hosts. See [Deactivate or Configure SELinux](prep_os.html).
 
 ### <a id="topic_xbl_mkx_zgb"></a>Java 
 
@@ -118,7 +118,7 @@ Greenplum Databased 6 supports these Java versions for PL/Java and PXF:
 
 ## <a id="topic_tnl_3mx_zgb"></a>Hardware and Network 
 
-The following table lists minimum recommended specifications for hardware servers intended to support Greenplum Database on Linux systems in a production environment. All host servers in your Greenplum Database system must have the same hardware and software configuration. Greenplum also provides hardware build guides for its certified hardware platforms. It is recommended that you work with a Greenplum Systems Engineer to review your anticipated environment to ensure an appropriate hardware configuration for Greenplum Database.
+The following table lists minimum recommended specifications for hardware servers intended to support Greenplum Database on Linux systems in a production environment. All host servers in your Greenplum Database system must have the same hardware and software configuration. Greenplum also provides hardware build guides for its certified hardware platforms. Work with a Greenplum Systems Engineer to review your anticipated environment to ensure an appropriate hardware configuration for Greenplum Database.
 
 <div class="tablenoborder"><table cellpadding="4" cellspacing="0" summary="" id="topic_tnl_3mx_zgb__ji162790" class="table" frame="border" border="1" rules="all"><caption><span class="tablecap">Minimum Hardware Requirements</span></caption><colgroup><col style="width:120pt" /><col style="width:255pt" /></colgroup><tbody class="tbody">
 <tr class="row">
@@ -150,6 +150,12 @@ The following table lists minimum recommended specifications for hardware server
 </tbody>
 </table>
 </div>
+
+**Hyperthreading**
+
+Resource Groups - one of the key Greenplum Database features - can control transaction concurrency, CPU and memory resources, workload isolation, and dynamic bursting. 
+
+When using resource groups to control resource allocation on Intel based systems, consider switching off Hyper-Threading (HT) in the server BIOS (for Intel cores the default is ON). Switching off HT might cause a small throughput reduction (less than 15%), but can achieve greater isolation between resource groups, and higher query performance with lower concurrency workloads.
 
 ### <a id="topic_elb_4ss_n4b"></a>Tanzu Greenplum on DCA Systems 
 
@@ -301,6 +307,8 @@ These Greenplum Database extensions are installed with Greenplum Database
 -   Progress DataDirect JDBC Drivers v5.1.4+275, v6.0.0+181 - The Progress DataDirect JDBC drivers are compliant with the Type 4 architecture, but provide advanced features that define them as Type 5 drivers.
 -   Progress DataDirect ODBC Drivers v7.1.6+7.16.389 - The Progress DataDirect ODBC drivers enable third party applications to connect via a common interface to the Tanzu Greenplum system.
 -   R2B X-LOG v5.x and v6.x - Real-time data replication solution that achieves high-speed database replication through the use of Redo Log Capturing method.
+
+**Note:** Greenplum 5.x clients (gpload, gpfdist) are supported with Greenplum 6.x Server and Informatica PowerCenter and PowerExchange 10.4.
 
 **Note:** Tanzu Greenplum 6 does not support the ODBC driver for Cognos Analytics V11.
 

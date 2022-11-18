@@ -672,6 +672,12 @@ typedef struct EState
 	/* partition oid that is being scanned, used by DynamicBitmapHeapScan/IndexScan */
 	int			partitionOid;
 
+	/*
+	 * GPDB: gp_bypass_unique_check is introduced so that routines, such as AO
+	 * vacuum, can avoid running uniqueness checks while inserting tuples.
+	 */
+	bool		gp_bypass_unique_check;
+
 } EState;
 
 struct PlanState;
@@ -1337,6 +1343,7 @@ typedef struct MergeAppendState
  *
  *		recursing			T when we're done scanning the non-recursive term
  *		intermediate_empty	T if intermediate_table is currently empty
+ *		refcount 			number of WorkTableScans which will scan the working table
  *		working_table		working table (to be scanned by recursive term)
  *		intermediate_table	current recursive output (next generation of WT)
  * ----------------
@@ -1346,6 +1353,7 @@ typedef struct RecursiveUnionState
 	PlanState	ps;				/* its first field is NodeTag */
 	bool		recursing;
 	bool		intermediate_empty;
+	int			refcount;
 	Tuplestorestate *working_table;
 	Tuplestorestate *intermediate_table;
 	/* Remaining fields are unused in UNION ALL case */
@@ -1999,11 +2007,22 @@ typedef struct NamedTuplestoreScanState
  *		WorkTableScan nodes are used to scan the work table created by
  *		a RecursiveUnion node.  We locate the RecursiveUnion node
  *		during executor startup.
+ *		In postgres, multiple recursive self-references is disallowed
+ *		by the SQL spec, and prevent inlining of multiply-referenced
+ *		CTEs with outer recursive refs, so they only have one WorkTable
+ *		correlate to one RecursiveUnion. But in GPDB, we don't support
+ *		CTE scan plan, if exists multiply-referenced CTEs with outer
+ *		recursive, there will be multiple WorkTable scan correlate to
+ *		one RecursiveUnion, and they share the same readptr of working
+ *		table which cause wrong results. We create a readptr for each
+ *		WorkTable scan, so that they won't influence each other.
+ *
  * ----------------
  */
 typedef struct WorkTableScanState
 {
 	ScanState	ss;				/* its first field is NodeTag */
+	int			readptr;		/* index of work table's tuplestore read pointer */
 	RecursiveUnionState *rustate;
 } WorkTableScanState;
 
@@ -2338,8 +2357,6 @@ typedef struct SortState
 	void	   *tuplesortstate; /* private state of tuplesort.c */
 	bool		am_worker;		/* are we a worker? */
 	SharedSortInfo *shared_info;	/* one entry per worker */
-
-	bool		noduplicates;	/* true if discard duplicate rows */
 
 	bool		delayEagerFree;		/* is it safe to free memory used by this node,
 									 * when this node has outputted its last row? */

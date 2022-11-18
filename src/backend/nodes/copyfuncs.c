@@ -353,6 +353,7 @@ _copyModifyTable(const ModifyTable *from)
 	COPY_SCALAR_FIELD(exclRelRTI);
 	COPY_NODE_FIELD(exclRelTlist);
 	COPY_NODE_FIELD(isSplitUpdates);
+	COPY_SCALAR_FIELD(forceTupleRouting);
 
 	return newnode;
 }
@@ -1220,9 +1221,6 @@ _copySort(const Sort *from)
 	COPY_POINTER_FIELD(collations, from->numCols * sizeof(Oid));
 	COPY_POINTER_FIELD(nullsFirst, from->numCols * sizeof(bool));
 
-    /* CDB */
-	COPY_SCALAR_FIELD(noduplicates);
-
 	return newnode;
 }
 
@@ -1614,7 +1612,6 @@ _copySplitUpdate(const SplitUpdate *from)
 	CopyPlanFields((Plan *) from, (Plan *) newnode);
 
 	COPY_SCALAR_FIELD(actionColIdx);
-	COPY_SCALAR_FIELD(tupleoidColIdx);
 	COPY_NODE_FIELD(insertColIdx);
 	COPY_NODE_FIELD(deleteColIdx);
 
@@ -3947,6 +3944,7 @@ CopyCreateStmtFields(const CreateStmt *from, CreateStmt *newnode)
 	COPY_STRING_FIELD(tablespacename);
 	COPY_STRING_FIELD(accessMethod);
 	COPY_SCALAR_FIELD(if_not_exists);
+	COPY_SCALAR_FIELD(gp_style_alter_part);
 
 	COPY_NODE_FIELD(distributedBy);
 	COPY_NODE_FIELD(partitionBy);

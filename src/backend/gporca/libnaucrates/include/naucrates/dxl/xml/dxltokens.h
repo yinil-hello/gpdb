@@ -239,6 +239,7 @@ enum Edxltoken
 	EdxltokenWindowFrameSpec,
 	EdxltokenWindowFSRow,
 	EdxltokenWindowFSRange,
+	EdxltokenWindowFSGroups,
 
 	EdxltokenWindowLeadingBoundary,
 	EdxltokenWindowTrailingBoundary,
@@ -256,6 +257,12 @@ enum Edxltoken
 	EdxltokenWindowESCurrentRow,
 	EdxltokenWindowESGroup,
 	EdxltokenWindowESTies,
+
+	EdxltokenWindowStartInRangeOid,
+	EdxltokenWindowEndInRangeOid,
+	EdxltokenWindowInRangeColl,
+	EdxltokenWindowInRangeAsc,
+	EdxltokenWindowInRangeNullsFirst,
 
 	EdxltokenWindowrefOid,
 	EdxltokenWindowrefDistinct,
@@ -365,8 +372,8 @@ enum Edxltoken
 	EdxltokenCtidColId,
 	EdxltokenGpSegmentIdColId,
 	EdxltokenTupleOidColId,
-	EdxltokenUpdatePreservesOids,
 	EdxltokenInputSorted,
+	EdxltokenSplitUpdate,
 
 	EdxltokenInputSegments,
 	EdxltokenOutputSegments,
@@ -463,7 +470,6 @@ enum Edxltoken
 	EdxltokenDoubleValue,
 
 	EdxltokenRelTemporary,
-	EdxltokenRelHasOids,
 
 	EdxltokenRelStorageType,
 	EdxltokenRelStorageHeap,
@@ -589,17 +595,6 @@ enum Edxltoken
 	EdxltokenReturnsNullOnNullInput,
 	EdxltokenIsNDVPreserving,
 
-	EdxltokenTriggers,
-	EdxltokenTrigger,
-
-	EdxltokenGPDBTrigger,
-	EdxltokenGPDBTriggerRow,
-	EdxltokenGPDBTriggerBefore,
-	EdxltokenGPDBTriggerInsert,
-	EdxltokenGPDBTriggerDelete,
-	EdxltokenGPDBTriggerUpdate,
-	EdxltokenGPDBTriggerEnabled,
-
 	EdxltokenGPDBFunc,
 	EdxltokenGPDBFuncStability,
 	EdxltokenGPDBFuncStable,
@@ -668,7 +663,6 @@ enum Edxltoken
 	EdxltokenDirectDispatchIsRaw,
 	EdxltokenDirectDispatchKeyValue,
 	EdxltokenPhysicalSplit,
-	EdxltokenPhysicalRowTrigger,
 	EdxltokenPhysicalAssert,
 
 	EdxltokenErrorCode,

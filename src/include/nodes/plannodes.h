@@ -409,6 +409,8 @@ typedef struct ModifyTable
 	Index		exclRelRTI;		/* RTI of the EXCLUDED pseudo relation */
 	List	   *exclRelTlist;	/* tlist of the EXCLUDED pseudo relation */
 	List	   *isSplitUpdates;
+
+	bool		forceTupleRouting; /* dynamic scans require tuple routing */
 } ModifyTable;
 
 struct PartitionPruneInfo;		/* forward reference to struct below */
@@ -1154,8 +1156,6 @@ typedef struct Sort
 	Oid		   *sortOperators;	/* OIDs of operators to sort them by */
 	Oid		   *collations;		/* OIDs of collations */
 	bool	   *nullsFirst;		/* NULLS FIRST/LAST directions */
-    /* CDB */
-	bool		noduplicates;   /* TRUE if sort should discard duplicates */
 } Sort;
 
 /* ---------------
@@ -1454,7 +1454,6 @@ typedef struct SplitUpdate
 {
 	Plan		plan;
 	AttrNumber	actionColIdx;		/* index of action column into the target list */
-	AttrNumber	tupleoidColIdx;		/* index of tuple oid column into the target list */
 	List		*insertColIdx;		/* list of columns to INSERT into the target list */
 	List		*deleteColIdx;		/* list of columns to DELETE into the target list */
 

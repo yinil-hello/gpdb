@@ -369,7 +369,7 @@ alter table aocs_multi_level_part_table add partition part3 start(date '2010-01-
   with (appendonly=true, orientation=column)
   (subpartition usa values ('usa'), subpartition asia values ('asia'), default subpartition def);
 
--- Add default partition (defaults to heap storage unless set with AO)
+-- Add default partition (defaults to parent table's AM)
 alter table aocs_multi_level_part_table add default partition yearYYYY (default subpartition def);
 SELECT am.amname FROM pg_class c LEFT JOIN pg_am am ON (c.relam = am.oid)
 WHERE c.relname = 'aocs_multi_level_part_table_1_prt_yearyyyy_2_prt_def';
@@ -468,3 +468,17 @@ RESET gp_default_storage_options;
 ALTER TABLE aocs_alter_add_col_no_compress ADD COLUMN d int;
 \d+ aocs_alter_add_col_no_compress 
 DROP TABLE aocs_alter_add_col_no_compress;
+
+-- test case: ensure reorganize keep default compresstype, compresslevel and blocksize table options
+CREATE TABLE aocs_alter_add_col_reorganize(a int) WITH (appendonly=true, orientation=column, compresstype=rle_type, compresslevel=4, blocksize=65536);
+ALTER TABLE aocs_alter_add_col_reorganize SET WITH (reorganize=true);
+SET gp_default_storage_options ='compresstype=zlib, compresslevel=2';
+-- use statement encoding
+ALTER TABLE aocs_alter_add_col_reorganize ADD COLUMN b int ENCODING(compresstype=zlib, compresslevel=3, blocksize=16384);
+-- use table setting
+ALTER TABLE aocs_alter_add_col_reorganize ADD COLUMN c int;
+RESET gp_default_storage_options;
+-- use table setting
+ALTER TABLE aocs_alter_add_col_reorganize ADD COLUMN d int;
+\d+ aocs_alter_add_col_reorganize
+DROP TABLE aocs_alter_add_col_reorganize;
